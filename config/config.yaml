@@ -1,0 +1,100 @@
+# AI PR Review Agent Configuration
+
+# Application settings
+app:
+  name: "AI PR Review Agent"
+  version: "0.1.0"
+  debug: false
+  log_level: "INFO"
+
+# GitHub configuration
+github:
+  api_base_url: "https://api.github.com"
+  timeout: 30
+  max_retries: 3
+  rate_limit_buffer: 100  # Keep 100 requests as buffer
+
+# Analysis settings
+analysis:
+  # Static analysis tools to use
+  static_analysis:
+    enabled: true
+    tools:
+      - "flake8"
+      - "bandit" 
+      - "mypy"
+    
+    # Tool-specific settings
+    flake8:
+      max_line_length: 88
+      ignore_errors: ["E203", "W503"]
+    
+    bandit:
+      skip_tests: ["B101"]  # Skip assert_used test
+    
+    mypy:
+      strict: false
+      ignore_missing_imports: true
+
+  # AI feedback settings
+  ai_feedback:
+    enabled: true
+    model: "codellama"  # Local model via Ollama
+    max_tokens: 1000
+    temperature: 0.1
+    chunk_size: 2000  # Characters per chunk for large files
+
+# File filtering
+file_filter:
+  # File extensions to analyze
+  included_extensions:
+    - ".py"
+    - ".js"
+    - ".ts"
+    - ".java"
+    - ".cpp"
+    - ".h"
+    - ".go"
+    - ".rs"
+  
+  # Directories to ignore
+  ignored_directories:
+    - "__pycache__"
+    - ".git"
+    - "node_modules"
+    - ".venv"
+    - "venv"
+    - "build"
+    - "dist"
+    - ".pytest_cache"
+  
+  # Files to ignore (patterns)
+  ignored_files:
+    - "*.pyc"
+    - "*.log"
+    - "*.tmp"
+    - "*_test.py"  # Test files (optional)
+
+# Feedback settings
+feedback:
+  format: "markdown"
+  include_line_numbers: true
+  max_suggestions_per_file: 5
+  severity_levels:
+    - "error"
+    - "warning"
+    - "info"
+    - "suggestion"
+
+# Caching
+cache:
+  enabled: true
+  ttl_hours: 24
+  max_size_mb: 100
+
+# Logging
+logging:
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file: "logs/ai_pr_review.log"
+  max_size_mb: 10
+  backup_count: 5

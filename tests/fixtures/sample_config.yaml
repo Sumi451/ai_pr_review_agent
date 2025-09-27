@@ -1,0 +1,25 @@
+# Sample configuration for testing
+app:
+  name: "Test AI PR Review Agent"
+  debug: true
+  log_level: "DEBUG"
+
+github:
+  timeout: 45
+  max_retries: 5
+
+analysis:
+  static_analysis:
+    enabled: true
+    tools: ["flake8", "mypy"]
+  
+  ai_feedback:
+    enabled: false
+    model: "llama2"
+
+file_filter:
+  included_extensions: [".py", ".js"]
+  ignored_directories: ["test_dir"]
+
+feedback:
+  max_suggestions_per_file: 3

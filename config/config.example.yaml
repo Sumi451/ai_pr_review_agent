@@ -1,0 +1,24 @@
+# AI PR Review Agent Configuration Example
+# Copy this to config.yaml and customize for your needs
+
+app:
+  debug: true  # Enable debug mode for development
+  log_level: "DEBUG"
+
+github:
+  # Your GitHub personal access token (DO NOT commit this)
+  # Set via environment variable: GITHUB_TOKEN
+  token: "${GITHUB_TOKEN}"
+  
+  # Optional: specific repositories to work with
+  repositories:
+    - "your-username/your-repo"
+
+analysis:
+  ai_feedback:
+    # Available models: codellama, llama2, mistral
+    model: "codellama"
+    # Adjust based on your hardware
+    max_tokens: 500
+
+# Override any settings from the default config.yaml
