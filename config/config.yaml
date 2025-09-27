@@ -98,3 +98,12 @@ logging:
   file: "logs/ai_pr_review.log"
   max_size_mb: 10
   backup_count: 5
+  
+  # Additional console settings
+  console_format: "%(levelname)-8s | %(name)-20s | %(message)s"
+  
+  # Module-specific log levels (optional)
+  modules:
+    "ai_pr_agent.analyzers": "DEBUG"
+    "ai_pr_agent.adapters": "INFO"
+    "requests": "WARNING"

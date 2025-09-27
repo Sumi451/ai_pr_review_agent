@@ -1,5 +1,6 @@
 """Command-line interface for AI PR Review Agent."""
 
+import logging
 import click
 from rich.console import Console
 from rich.table import Table
@@ -71,6 +72,47 @@ def config(config: str, validate: bool):
         
     except Exception as e:
         raise click.ClickException(f"Configuration error: {e}")
+    
+@main.command()
+@click.option(
+    "--level",
+    "-l",
+    type=click.Choice(['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL']),
+    default="INFO",
+    help="Log level for the demo"
+)
+@click.option(
+    "--count",
+    "-c",
+    default=3,
+    help="Number of demo operations to perform"
+)
+def demo_logging(level: str, count: int):
+    """Demonstrate logging functionality."""
+    from ai_pr_agent.utils import get_logger
+    
+    # Configure logging level for demo
+    logger = get_logger("cli.demo")
+    logger.setLevel(getattr(logging, level))
+    
+    rprint(f"[bold blue]🔍 Logging Demo - Level: {level}[/bold blue]\n")
+    
+    logger.info(f"Starting logging demo with {count} operations")
+    
+    for i in range(count):
+        logger.debug(f"Debug message {i+1}")
+        logger.info(f"Processing operation {i+1}")
+        
+        if i % 2 == 0:
+            logger.warning(f"Warning for operation {i+1}")
+        
+        if i == count - 1:
+            logger.error("Simulated error in last operation")
+    
+    logger.info("Logging demo completed")
+    
+    settings = get_settings()
+    rprint(f"\n[green]✅ Check log file:[/green] {settings.logging.file}")
 
 
 if __name__ == "__main__":
