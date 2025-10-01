@@ -25,3 +25,27 @@ clean:
 	rm -rf *.egg-info/
 	find . -type d -name __pycache__ -delete
 	find . -type f -name "*.pyc" -delete
+
+# Add to existing Makefile
+
+test-unit:
+	pytest tests/unit/ -v
+
+test-integration:
+	pytest tests/integration/ -v
+
+test-fast:
+	pytest -m "not slow" -v
+
+test-all:
+	pytest tests/ -v
+
+test-coverage:
+	pytest tests/ -v --cov=src/ai_pr_agent --cov-report=html --cov-report=term
+
+test-watch:
+	pytest-watch tests/ -v
+
+# For Windows, use:
+test-coverage-windows:
+	pytest tests/ -v --cov=src\ai_pr_agent --cov-report=html --cov-report=term

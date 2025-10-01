@@ -1,0 +1,22 @@
+{
+  "id": 123456789,
+  "number": 42,
+  "title": "Add new feature with tests",
+  "body": "This PR implements the new feature as requested in issue #123",
+  "state": "open",
+  "user": {
+    "login": "developer",
+    "id": 12345
+  },
+  "head": {
+    "ref": "feature/new-feature",
+    "sha": "abc123def456"
+  },
+  "base": {
+    "ref": "main",
+    "sha": "def456abc123"
+  },
+  "created_at": "2024-01-15T10:30:00Z",
+  "updated_at": "2024-01-15T11:00:00Z",
+  "html_url": "https://github.com/org/repo/pull/42"
+}

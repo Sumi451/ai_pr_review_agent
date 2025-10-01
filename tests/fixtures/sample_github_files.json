@@ -1,0 +1,25 @@
+[
+  {
+    "filename": "src/main.py",
+    "status": "modified",
+    "additions": 15,
+    "deletions": 5,
+    "changes": 20,
+    "patch": "@@ -1,5 +1,15 @@\n def main():\n-    print('Hello')\n+    print('Hello, World!')\n+    return 0"
+  },
+  {
+    "filename": "tests/test_main.py",
+    "status": "added",
+    "additions": 25,
+    "deletions": 0,
+    "changes": 25,
+    "patch": "@@ -0,0 +1,25 @@\n+import pytest\n+\n+def test_main():\n+    assert True"
+  },
+  {
+    "filename": "docs/old_readme.md",
+    "status": "removed",
+    "additions": 0,
+    "deletions": 10,
+    "changes": 10
+  }
+]
