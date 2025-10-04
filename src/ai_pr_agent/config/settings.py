@@ -175,7 +175,7 @@ class Settings:
             self._update_dataclass(self.logging, data["logging"])
     
     def _update_from_env(self) -> None:
-        """Update settings from environment variables."""
+        """Update settings from environment variables"""
         # GitHub token from environment
         if os.getenv("GITHUB_TOKEN"):
             self.github.token = os.getenv("GITHUB_TOKEN")
