@@ -230,3 +230,40 @@ def pytest_collection_modifyitems(config, items):
         # Auto-add 'integration' marker to tests in tests/integration/
         elif "integration" in str(item.fspath):
             item.add_marker(pytest.mark.integration)
+
+
+@pytest.fixture
+def sample_git_diff():
+    """Sample git diff for testing."""
+    return """diff --git a/test.py b/test.py
+index abc123..def456 100644
+--- a/test.py
++++ b/test.py
+@@ -1,3 +1,4 @@
+ def hello():
+-    print("old")
++    print("new")
++    return True
+"""
+
+
+@pytest.fixture
+def sample_multi_file_diff():
+    """Sample multi-file git diff."""
+    return """diff --git a/file1.py b/file1.py
+index abc123..def456 100644
+--- a/file1.py
++++ b/file1.py
+@@ -1,2 +1,3 @@
+ line 1
++line 2
+ line 3
+diff --git a/file2.py b/file2.py
+index xyz789..uvw012 100644
+--- a/file2.py
++++ b/file2.py
+@@ -1,3 +1,2 @@
+ line 1
+-line 2
+ line 3
+"""

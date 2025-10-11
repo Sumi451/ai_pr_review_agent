@@ -18,6 +18,7 @@ from ai_pr_agent.core import (
     FileStatus,
     SeverityLevel,
 )
+from ai_pr_agent.utils.git_parser import DiffParser, GitRepository
 from ai_pr_agent.core.engine import AnalysisEngine
 from ai_pr_agent.analyzers import StaticAnalyzer
 from ai_pr_agent.utils import get_logger
@@ -412,6 +413,281 @@ def info(show_stats):
         rprint(f"\n[bold]Engine Statistics:[/bold]")
         rprint(f"  Total analyzers: {stats['total_analyzers']}")
         rprint(f"  Analyzer types: {', '.join(stats['analyzer_types'])}")
+
+@main.command()
+@click.option('--base', '-b', default='main', help='Base branch')
+@click.option('--compare', '-c', help='Branch to compare (defaults to current)')
+@click.option('--output', '-o', type=click.Choice(['text', 'json', 'markdown']), default='text')
+@click.option('--no-static', is_flag=True, help='Disable static analysis')
+@click.option('--repo-path', default='.', help='Path to git repository')
+def analyze_branch(base, compare, output, no_static, repo_path):
+    """Analyze changes between git branches."""
+    
+    try:
+        # Initialize git repository
+        git_repo = GitRepository(repo_path)
+        
+        # Get compare branch (default to current)
+        if not compare:
+            compare = git_repo.get_current_branch()
+            rprint(f"[cyan]Using current branch: {compare}[/cyan]")
+        
+        # Check if branches exist
+        if not git_repo.branch_exists(base):
+            rprint(f"[red]❌ Base branch '{base}' not found[/red]")
+            sys.exit(1)
+        
+        if not git_repo.branch_exists(compare):
+            rprint(f"[red]❌ Compare branch '{compare}' not found[/red]")
+            sys.exit(1)
+        
+        rprint(Panel.fit(
+            f"[bold blue]📊 Analyzing {compare} vs {base}[/bold blue]",
+            border_style="blue"
+        ))
+        
+        # Get diff
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Getting git diff...", total=None)
+            diff_text = git_repo.get_branch_diff(base, compare)
+            progress.update(task, completed=True)
+        
+        if not diff_text or not diff_text.strip():
+            rprint("[yellow]⚠️  No differences found between branches[/yellow]")
+            return
+        
+        # Parse diff into file changes
+        parser = DiffParser()
+        file_changes = parser.parse_diff(diff_text)
+        
+        if not file_changes:
+            rprint("[yellow]⚠️  No file changes to analyze[/yellow]")
+            return
+        
+        rprint(f"[green]✓ Found {len(file_changes)} changed file(s)[/green]")
+        
+        # Get commit info for PR metadata
+        commit_info = git_repo.get_commit_info(compare)
+        
+        # Create PR object
+        pr = PullRequest(
+            id=1,
+            title=f"Changes in {compare}",
+            description=commit_info['message'],
+            author=commit_info['author'],
+            source_branch=compare,
+            target_branch=base,
+            files_changed=file_changes,
+            created_at=datetime.now()
+        )
+        
+        # Run analysis
+        _run_analysis_and_display(pr, output, no_static)
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        logger.exception("Branch analysis failed")
+        sys.exit(1)
+
+
+@main.command()
+@click.argument('commit', default='HEAD')
+@click.option('--output', '-o', type=click.Choice(['text', 'json', 'markdown']), default='text')
+@click.option('--no-static', is_flag=True, help='Disable static analysis')
+@click.option('--repo-path', default='.', help='Path to git repository')
+def analyze_commit(commit, output, no_static, repo_path):
+    """Analyze changes in a specific commit."""
+    
+    try:
+        # Initialize git repository
+        git_repo = GitRepository(repo_path)
+        
+        # Get commit info
+        commit_info = git_repo.get_commit_info(commit)
+        
+        rprint(Panel.fit(
+            f"[bold blue]📊 Analyzing commit {commit_info['short_hash']}[/bold blue]\n"
+            f"[cyan]{commit_info['message']}[/cyan]",
+            border_style="blue"
+        ))
+        
+        # Get diff
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Getting commit diff...", total=None)
+            diff_text = git_repo.get_commit_diff(commit)
+            progress.update(task, completed=True)
+        
+        if not diff_text or not diff_text.strip():
+            rprint("[yellow]⚠️  No changes in this commit[/yellow]")
+            return
+        
+        # Parse diff
+        parser = DiffParser()
+        file_changes = parser.parse_diff(diff_text)
+        
+        if not file_changes:
+            rprint("[yellow]⚠️  No file changes to analyze[/yellow]")
+            return
+        
+        rprint(f"[green]✓ Found {len(file_changes)} changed file(s)[/green]")
+        
+        # Create PR object
+        pr = PullRequest(
+            id=1,
+            title=commit_info['message'].split('\n')[0],  # First line
+            description=commit_info['message'],
+            author=commit_info['author'],
+            source_branch=commit_info['short_hash'],
+            target_branch='base',
+            files_changed=file_changes,
+            created_at=datetime.now()
+        )
+        
+        # Run analysis
+        _run_analysis_and_display(pr, output, no_static)
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        logger.exception("Commit analysis failed")
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--output', '-o', type=click.Choice(['text', 'json', 'markdown']), default='text')
+@click.option('--no-static', is_flag=True, help='Disable static analysis')
+@click.option('--repo-path', default='.', help='Path to git repository')
+def analyze_uncommitted(output, no_static, repo_path):
+    """Analyze uncommitted changes in the working directory."""
+    
+    try:
+        # Initialize git repository
+        git_repo = GitRepository(repo_path)
+        
+        current_branch = git_repo.get_current_branch()
+        
+        rprint(Panel.fit(
+            f"[bold blue]📊 Analyzing uncommitted changes[/bold blue]\n"
+            f"[cyan]Branch: {current_branch}[/cyan]",
+            border_style="blue"
+        ))
+        
+        # Get uncommitted changes
+        with Progress(
+            SpinnerColumn(),
+            TextColumn("[progress.description]{task.description}"),
+            console=console,
+        ) as progress:
+            task = progress.add_task("Getting uncommitted changes...", total=None)
+            diff_text = git_repo.get_uncommitted_changes()
+            progress.update(task, completed=True)
+        
+        if not diff_text or not diff_text.strip():
+            rprint("[yellow]⚠️  No uncommitted changes found[/yellow]")
+            return
+        
+        # Parse diff
+        parser = DiffParser()
+        file_changes = parser.parse_diff(diff_text)
+        
+        if not file_changes:
+            rprint("[yellow]⚠️  No file changes to analyze[/yellow]")
+            return
+        
+        rprint(f"[green]✓ Found {len(file_changes)} changed file(s)[/green]")
+        
+        # Create PR object
+        pr = PullRequest(
+            id=1,
+            title="Uncommitted changes",
+            description="Analysis of uncommitted changes in working directory",
+            author="local",
+            source_branch=current_branch,
+            target_branch="base",
+            files_changed=file_changes,
+            created_at=datetime.now()
+        )
+        
+        # Run analysis
+        _run_analysis_and_display(pr, output, no_static)
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        logger.exception("Uncommitted changes analysis failed")
+        sys.exit(1)
+
+
+@main.command()
+@click.option('--repo-path', default='.', help='Path to git repository')
+def git_info(repo_path):
+    """Show git repository information."""
+    
+    try:
+        git_repo = GitRepository(repo_path)
+        
+        current_branch = git_repo.get_current_branch()
+        branches = git_repo.list_branches()
+        commit_info = git_repo.get_commit_info()
+        
+        info_text = f"""[bold]Git Repository Information[/bold]
+
+[cyan]Current Branch:[/cyan] {current_branch}
+
+[cyan]All Branches:[/cyan]
+{chr(10).join(f"  • {branch}" for branch in branches[:10])}
+{f"  [dim]... and {len(branches) - 10} more[/dim]" if len(branches) > 10 else ""}
+
+[cyan]Latest Commit:[/cyan]
+  Hash: {commit_info['short_hash']}
+  Author: {commit_info['author']}
+  Date: {commit_info['date'][:10]}
+  Message: {commit_info['message'].split(chr(10))[0]}
+"""
+        
+        rprint(Panel(info_text, border_style="blue", title="🔍 Git Info"))
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        logger.exception("Git info failed")
+        sys.exit(1)
+
+
+# Helper function to consolidate analysis logic
+def _run_analysis_and_display(pr, output_format, no_static):
+    """Run analysis and display results."""
+    
+    # Set up analysis engine
+    engine = AnalysisEngine()
+    
+    if not no_static:
+        engine.register_analyzer(StaticAnalyzer())
+        rprint("[green]✓ Static analyzer registered[/green]")
+    
+    # Run analysis
+    rprint("\n[bold]🔍 Running analysis...[/bold]\n")
+    
+    try:
+        summary = engine.analyze_pull_request(pr)
+        
+        # Display results based on output format
+        if output_format == 'text':
+            _display_text_results(summary)
+        elif output_format == 'json':
+            _display_json_results(summary)
+        elif output_format == 'markdown':
+            _display_markdown_results(summary)
+        
+    except Exception as e:
+        rprint(f"[red]❌ Analysis failed: {e}[/red]")
+        logger.exception("Analysis error")
+        raise
 
 
 if __name__ == "__main__":
