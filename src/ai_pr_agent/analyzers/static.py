@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional, List, Dict, Any
 import json
 
+from ai_pr_agent.cache import CacheManager
 from ai_pr_agent.utils import get_logger
 from ai_pr_agent.config import get_settings
 from ai_pr_agent.core.models import (
@@ -34,6 +35,7 @@ class StaticAnalyzer(BaseAnalyzer):
         """Initialize the static analyzer."""
         self.settings = get_settings()
         self.config = self.settings.analysis.static_analysis
+        self.cache = CacheManager() if self.settings.cache.enabled else None
         logger.info("StaticAnalyzer initialized")
     
     def can_analyze(self, file_change: FileChange) -> bool:
@@ -59,7 +61,7 @@ class StaticAnalyzer(BaseAnalyzer):
             AnalysisResult with findings
         """
         if not self.can_analyze(file_change):
-            logger.debug(f"Skipping non-Python file: {file_change.filename}")
+            logger.debug("Skipping non-Python file: %s", file_change.filename)
             return None
         
         if not self.config.enabled:
@@ -68,26 +70,35 @@ class StaticAnalyzer(BaseAnalyzer):
         
         logger.info(f"Running static analysis on {file_change.filename}")
         
+        # Extract code from patch
+        if not file_change.patch:
+            logger.warning(f"No patch available for {file_change.filename}, skipping")
+            return None
+        
+        code_content = self._extract_code_from_patch(file_change.patch)
+        
+        if not code_content:
+            logger.debug(f"No code content extracted from {file_change.filename}")
+            return None
+        
+        # Check cache first
+        if self.cache:
+            cached_result = self.cache.get_cached_result(
+                filename=file_change.filename,
+                content=code_content,
+                analyzer_type='static'
+            )
+            if cached_result:
+                logger.info(f"Using cached result for {file_change.filename}")
+                return cached_result
+        
+        # Create new result
         result = AnalysisResult(
             filename=file_change.filename,
             analysis_type=AnalysisType.STATIC
         )
         
-        # Create a temporary file with the file content
-        # (In a real scenario, you'd have the actual file content)
-        # For now, we'll simulate with the patch or skip if no content
-        if not file_change.patch:
-            logger.warning(f"No patch available for {file_change.filename}, skipping")
-            return result
-        
         try:
-            # Extract code from patch
-            code_content = self._extract_code_from_patch(file_change.patch)
-            
-            if not code_content:
-                logger.debug(f"No code content extracted from {file_change.filename}")
-                return result
-            
             # Run analysis tools
             if "flake8" in self.config.tools:
                 self._run_flake8(code_content, result)
@@ -102,6 +113,15 @@ class StaticAnalyzer(BaseAnalyzer):
                 f"Static analysis complete for {file_change.filename}: "
                 f"{len(result.comments)} issues found"
             )
+            
+            # Store in cache
+            if self.cache:
+                self.cache.store_result(
+                    filename=file_change.filename,
+                    content=code_content,
+                    analyzer_type='static',
+                    result=result
+                )
             
         except Exception as e:
             logger.error(f"Static analysis failed for {file_change.filename}: {e}")

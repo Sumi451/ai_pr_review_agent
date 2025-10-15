@@ -55,6 +55,11 @@ logs/
 .DS_Store
 Thumbs.db
 
+# Cache
+.cache/
+*.db
+*.db-journal
+
 # Project specific
 config/local_config.yaml
 models/

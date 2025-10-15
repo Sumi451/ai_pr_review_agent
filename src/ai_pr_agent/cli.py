@@ -22,6 +22,7 @@ from ai_pr_agent.utils.git_parser import DiffParser, GitRepository
 from ai_pr_agent.core.engine import AnalysisEngine
 from ai_pr_agent.analyzers import StaticAnalyzer
 from ai_pr_agent.utils import get_logger
+from ai_pr_agent.cache import CacheManager
 
 console = Console()
 logger = get_logger(__name__)
@@ -688,6 +689,89 @@ def _run_analysis_and_display(pr, output_format, no_static):
         rprint(f"[red]❌ Analysis failed: {e}[/red]")
         logger.exception("Analysis error")
         raise
+
+@main.group()
+def cache():
+    """Manage analysis cache."""
+    pass
+
+
+@cache.command()
+def stats():
+    """Show cache statistics."""
+    try:
+        cache_mgr = CacheManager()
+        stats = cache_mgr.get_cache_stats()
+        
+        rprint(Panel.fit(
+            "[bold blue]📊 Cache Statistics[/bold blue]",
+            border_style="blue"
+        ))
+        
+        rprint(f"\n[cyan]Total Entries:[/cyan] {stats.get('total_entries', 0)}")
+        rprint(f"[cyan]Database Size:[/cyan] {stats.get('database_size_mb', 0)} MB")
+        
+        by_analyzer = stats.get('by_analyzer', {})
+        if by_analyzer:
+            rprint(f"\n[cyan]Entries by Analyzer:[/cyan]")
+            for analyzer, count in by_analyzer.items():
+                rprint(f"  • {analyzer}: {count}")
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cache.command()
+@click.option('--days', default=7, help='Keep entries from last N days')
+def cleanup(days):
+    """Clean up old cache entries."""
+    try:
+        cache_mgr = CacheManager()
+        
+        rprint(f"[yellow]Cleaning up entries older than {days} days...[/yellow]")
+        cache_mgr.cleanup_old_entries(days)
+        
+        rprint("[green]✓ Cache cleanup complete[/green]")
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cache.command()
+@click.confirmation_option(prompt='Are you sure you want to clear all cache?')
+def clear():
+    """Clear all cache entries."""
+    try:
+        cache_mgr = CacheManager()
+        cache_mgr.clear_cache()
+        
+        rprint("[green]✓ Cache cleared[/green]")
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cache.command('info')
+def cache_info():
+    """Show cache configuration and location."""
+    settings = get_settings()
+    
+    cache_dir = Path('.cache')
+    db_path = cache_dir / 'analysis_cache.db'
+    
+    info_text = f"""[bold]Cache Configuration[/bold]
+
+[cyan]Status:[/cyan] {'✅ Enabled' if settings.cache.enabled else '❌ Disabled'}
+[cyan]TTL:[/cyan] {settings.cache.ttl_hours} hours
+[cyan]Max Size:[/cyan] {settings.cache.max_size_mb} MB
+[cyan]Database:[/cyan] {db_path}
+[cyan]Exists:[/cyan] {'Yes' if db_path.exists() else 'No'}
+"""
+    
+    rprint(Panel(info_text, border_style="blue"))
 
 
 if __name__ == "__main__":

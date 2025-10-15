@@ -2,6 +2,7 @@
 Git diff parsing utilities.
 """
 import re
+import subprocess
 from typing import List, Dict, Optional, Tuple
 from pathlib import Path
 
@@ -326,3 +327,48 @@ class GitRepository:
             List of branch names
         """
         return [branch.name for branch in self.repo.branches]
+    
+    def _run_git_command(self, args: List[str]) -> str:
+        """Run a git command and return its output.
+        
+        Args:
+            args (List[str]): List of command arguments
+            
+        Returns:
+            str: Command output
+            
+        Raises:
+            subprocess.CalledProcessError: If git command fails
+        """
+        # Construct full git command
+        cmd = ['git'] + args
+        
+        # Run command and capture output
+        result = subprocess.run(
+            cmd,
+            cwd=self.repo_path,
+            capture_output=True,
+            text=True,
+            check=True
+        )
+        
+        return result.stdout
+    
+    def branch_exists(self, branch_name: str) -> bool:
+        """
+        Check if a branch exists in the repository.
+        
+        Args:
+            branch_name (str): Name of the branch to check
+            
+        Returns:
+            bool: True if branch exists, False otherwise
+        """
+        try:
+            # Use git command to list branches and check if branch exists
+            result = self._run_git_command(['branch', '--list', branch_name])
+            # If branch exists, result will contain the branch name
+            return bool(result.strip())
+        except subprocess.CalledProcessError:
+            # If command fails, assume branch doesn't exist
+            return False
