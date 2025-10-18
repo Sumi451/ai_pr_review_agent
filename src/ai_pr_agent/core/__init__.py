@@ -17,6 +17,10 @@ from .exceptions import (
     GitHubAPIError,
     AnalysisError,
     AIModelError,
+    NotFoundError,
+    PermissionError,
+    APIError,
+    RateLimitError,
 )
 
 __all__ = [
@@ -36,4 +40,8 @@ __all__ = [
     "GitHubAPIError",
     "AnalysisError",
     "AIModelError",
+    "NotFoundError",
+    "PermissionError",
+    "APIError",
+    "RateLimitError",
 ]

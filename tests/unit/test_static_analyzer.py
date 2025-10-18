@@ -128,6 +128,7 @@ def bad_function( ):
         
         # Should return empty result, not crash
         assert result is not None
+        assert result.filename == "test.py"
         assert len(result.comments) == 0
 
 

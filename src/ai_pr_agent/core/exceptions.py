@@ -1,6 +1,7 @@
 """Custom exceptions for AI PR Review Agent."""
 
 from ai_pr_agent.utils import get_logger
+from typing import Optional
 
 logger = get_logger(__name__)
 
@@ -37,3 +38,33 @@ class AnalysisError(AIReviewAgentError):
 class AIModelError(AIReviewAgentError):
     """Raised when AI model operations fail."""
     pass
+
+class NotFoundError(AIReviewAgentError):
+    """Raised when a resource is not found."""
+    pass
+
+
+class PermissionError(AIReviewAgentError):
+    """Raised when lacking required permissions."""
+    pass
+
+
+class APIError(AIReviewAgentError):
+    """Raised when API calls fail."""
+    
+    def __init__(self, message: str, status_code: Optional[int] = None, details: str = None):
+        super().__init__(message, details)
+        self.status_code = status_code
+
+
+class RateLimitError(APIError):
+    """Raised when hitting rate limits."""
+    
+    def __init__(
+        self, 
+        message: str, 
+        reset_at: Optional[int] = None, 
+        details: str = None
+    ):
+        super().__init__(message, status_code=429, details=details)
+        self.reset_at = reset_at

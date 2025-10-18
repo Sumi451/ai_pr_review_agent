@@ -60,6 +60,7 @@ class StaticAnalyzer(BaseAnalyzer):
         Returns:
             AnalysisResult with findings
         """
+        
         if not self.can_analyze(file_change):
             logger.debug("Skipping non-Python file: %s", file_change.filename)
             return None
@@ -70,10 +71,15 @@ class StaticAnalyzer(BaseAnalyzer):
         
         logger.info(f"Running static analysis on {file_change.filename}")
         
+         # Create new result
+        result = AnalysisResult(
+            filename=file_change.filename,
+            analysis_type=AnalysisType.STATIC
+        )
         # Extract code from patch
         if not file_change.patch:
             logger.warning(f"No patch available for {file_change.filename}, skipping")
-            return None
+            return result
         
         code_content = self._extract_code_from_patch(file_change.patch)
         
@@ -92,11 +98,7 @@ class StaticAnalyzer(BaseAnalyzer):
                 logger.info(f"Using cached result for {file_change.filename}")
                 return cached_result
         
-        # Create new result
-        result = AnalysisResult(
-            filename=file_change.filename,
-            analysis_type=AnalysisType.STATIC
-        )
+       
         
         try:
             # Run analysis tools

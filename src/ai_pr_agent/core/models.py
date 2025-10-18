@@ -64,6 +64,7 @@ class FileChange:
             self.status = FileStatus(self.status.lower())
         
         
+        
         # Auto-detect language from file extension if not provided
         if self.language is None:
             self.language = self._detect_language()
@@ -274,6 +275,11 @@ class AnalysisResult:
         }
 
 
+"""
+Core data models for AI PR Review Agent - FIXED VERSION
+Add this to your existing models.py, replacing the PullRequest class
+"""
+
 @dataclass
 class PullRequest:
     """
@@ -289,9 +295,19 @@ class PullRequest:
         files_changed: List of changed files
         created_at: Timestamp when PR was created
         updated_at: Timestamp when PR was last updated
-        url: URL to the pull request
+        url: URL to the pull request (web URL)
         repository: Repository identifier (e.g., "owner/repo")
         status: Current status of the PR (open, closed, merged)
+        
+        # Platform-specific fields
+        platform: Platform identifier (github, gitlab, etc.)
+        api_url: API endpoint for this PR
+        state: PR state (open, closed, merged)
+        mergeable: Whether PR can be merged
+        merged: Whether PR is merged
+        merged_at: Merge timestamp
+        head_sha: SHA of head commit
+        base_sha: SHA of base commit
     """
     id: int
     title: str
@@ -302,9 +318,19 @@ class PullRequest:
     files_changed: List[FileChange] = field(default_factory=list)
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
-    url: Optional[str] = None
+    url: Optional[str] = None  # Keep as regular field for backward compatibility
     repository: Optional[str] = None
     status: str = "open"
+    
+    # Platform-specific fields (NEW)
+    platform: str = "unknown"  # github, gitlab, bitbucket
+    api_url: Optional[str] = None  # API endpoint for this PR
+    state: str = "open"  # open, closed, merged
+    mergeable: Optional[bool] = None
+    merged: bool = False
+    merged_at: Optional[datetime] = None
+    head_sha: Optional[str] = None  # SHA of head commit
+    base_sha: Optional[str] = None  # SHA of base commit
     
     def __post_init__(self):
         """Post-initialization processing."""
@@ -313,6 +339,11 @@ class PullRequest:
             f"({self.source_branch} -> {self.target_branch})"
         )
         logger.debug(f"PR has {len(self.files_changed)} file changes")
+    
+    @property
+    def html_url(self) -> Optional[str]:
+        """Alias for url (for platform consistency)."""
+        return self.url
     
     @property
     def total_additions(self) -> int:
@@ -367,6 +398,14 @@ class PullRequest:
             'url': self.url,
             'repository': self.repository,
             'status': self.status,
+            'platform': self.platform,
+            'api_url': self.api_url,
+            'state': self.state,
+            'mergeable': self.mergeable,
+            'merged': self.merged,
+            'merged_at': self.merged_at.isoformat() if self.merged_at else None,
+            'head_sha': self.head_sha,
+            'base_sha': self.base_sha,
             'files_changed': [
                 {
                     'filename': f.filename,
@@ -388,7 +427,6 @@ class PullRequest:
                 'modified_files': len(self.modified_files),
             }
         }
-
 
 @dataclass
 class ReviewSummary:
