@@ -44,7 +44,7 @@ class NotFoundError(AIReviewAgentError):
     pass
 
 
-class PermissionError(AIReviewAgentError):
+class AccessPermissionError(AIReviewAgentError):
     """Raised when lacking required permissions."""
     pass
 
