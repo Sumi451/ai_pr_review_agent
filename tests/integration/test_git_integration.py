@@ -1,7 +1,9 @@
 """Integration tests for git functionality."""
 
+import gc
 import pytest
 import tempfile
+import time
 import os
 from pathlib import Path
 
@@ -20,7 +22,10 @@ class TestGitIntegration:
         
         import git
         
-        with tempfile.TemporaryDirectory() as tmpdir:
+        tmpdir = tempfile.mkdtemp()
+        repo = None
+        
+        try:
             # Initialize repo
             repo = git.Repo.init(tmpdir)
             
@@ -36,6 +41,29 @@ class TestGitIntegration:
             repo.index.commit("Initial commit")
             
             yield tmpdir, repo
+        finally:
+            # Clean up: close git repository to release file handles
+            if repo is not None:
+                repo.close()
+                del repo
+            
+            # Force garbage collection to release file handles
+            gc.collect()
+            time.sleep(0.1)
+            
+            # Try to remove directory with retry logic for Windows
+            import shutil
+            try:
+                shutil.rmtree(tmpdir, ignore_errors=False)
+            except PermissionError:
+                # On Windows, git may still hold locks
+                gc.collect()
+                time.sleep(0.5)
+                try:
+                    shutil.rmtree(tmpdir, ignore_errors=False)
+                except PermissionError:
+                    # If it still fails, use ignore_errors to avoid test failure
+                    shutil.rmtree(tmpdir, ignore_errors=True)
     
     def test_parse_real_git_diff(self, temp_git_repo):
         """Test parsing a real git diff."""
@@ -63,19 +91,23 @@ class TestGitIntegration:
         
         repo = GitRepository(tmpdir)
         
-        # Test getting current branch
-        branch = repo.get_current_branch()
-        assert branch in ["master", "main"]
-        
-        # Test listing branches
-        branches = repo.list_branches()
-        assert len(branches) >= 1
-        
-        # Test commit info
-        info = repo.get_commit_info()
-        assert 'hash' in info
-        assert 'author' in info
-        assert info['author'] == "Test User"
+        try:
+            # Test getting current branch
+            branch = repo.get_current_branch()
+            assert branch in ["master", "main"]
+            
+            # Test listing branches
+            branches = repo.list_branches()
+            assert len(branches) >= 1
+            
+            # Test commit info
+            info = repo.get_commit_info()
+            assert 'hash' in info
+            assert 'author' in info
+            assert info['author'] == "Test User"
+        finally:
+            # Close the repository to release file handles
+            repo.repo.close()
     
     def test_analyze_uncommitted_changes(self, temp_git_repo):
         """Test analyzing uncommitted changes."""
@@ -87,16 +119,21 @@ class TestGitIntegration:
         
         # Get uncommitted changes
         repo = GitRepository(tmpdir)
-        diff_text = repo.get_uncommitted_changes()
         
-        assert diff_text
-        
-        # Parse
-        parser = DiffParser()
-        file_changes = parser.parse_diff(diff_text)
-        
-        assert len(file_changes) == 1
-        assert file_changes[0].filename == "test.py"
+        try:
+            diff_text = repo.get_uncommitted_changes()
+            
+            assert diff_text
+            
+            # Parse
+            parser = DiffParser()
+            file_changes = parser.parse_diff(diff_text)
+            
+            assert len(file_changes) == 1
+            assert file_changes[0].filename == "test.py"
+        finally:
+            # Close the repository to release file handles
+            repo.repo.close()
 
 
 @pytest.mark.skipif(

@@ -357,8 +357,9 @@ class GitHubAdapter(BaseAdapter):
             comment_id_int = int(comment_id)
             
             try:
-                # Try as issue comment first
-                comment = repo.get_issue_comment(comment_id_int)
+                # Try as issue comment first - need to get through the issue
+                issue = repo.get_issue(pr_number)
+                comment = issue.get_comment(comment_id_int)
                 comment.edit(new_body)
             except GithubException as e:
                 if e.status == 404:
@@ -384,6 +385,7 @@ class GitHubAdapter(BaseAdapter):
     def delete_comment(
         self,
         repository: str,
+        pr_number: int,  # Add pr_number parameter
         comment_id: str
     ) -> bool:
         """
@@ -391,6 +393,7 @@ class GitHubAdapter(BaseAdapter):
         
         Args:
             repository: Repository identifier
+            pr_number: Pull request number (needed for review comments)
             comment_id: GitHub comment ID
         
         Returns:
@@ -406,32 +409,31 @@ class GitHubAdapter(BaseAdapter):
             repo = self.client.get_repo(repository)
             comment_id_int = int(comment_id)
             
-            # Get comment (try issue comment first, then review comment)
-            comment = None
             try:
-                # Try to get as issue comment
-                comment = repo.get_issue_comment(comment_id_int)  # type: ignore
-            except:
-                try:
-                    # Try to get as pull request review comment
-                    comment = repo.get_pull(1).get_review_comment(comment_id_int)  # type: ignore
-                except:
-                    raise NotFoundError(f"Comment {comment_id} not found")
-            
-            if comment:
+                # Try as issue comment first - need to get through the issue
+                issue = repo.get_issue(pr_number)
+                comment = issue.get_comment(comment_id_int)
                 comment.delete()
+            except GithubException as e:
+                if e.status == 404:
+                    # Try as review comment
+                    try:
+                        pr = repo.get_pull(pr_number)
+                        comment = pr.get_review_comment(comment_id_int)
+                        comment.delete()
+                    except GithubException:
+                        raise NotFoundError(f"Comment {comment_id} not found")
+                else:
+                    raise
             
             logger.info(f"Comment {comment_id} deleted successfully")
             return True
             
+        except NotFoundError:
+            raise
         except GithubException as e:
-            if e.status == 404:
-                raise NotFoundError(f"Comment {comment_id} not found")
-            else:
-                raise APIError(
-                    f"Failed to delete comment: {e.data.get('message', str(e))}",
-                    status_code=e.status
-                )
+            message = e.data.get('message', str(e)) if hasattr(e, 'data') else str(e)
+            raise APIError(f"Failed to delete comment: {message}", status_code=e.status)
     
     def list_pull_requests(
         self,
@@ -526,8 +528,8 @@ class GitHubAdapter(BaseAdapter):
         """
         try:
             rate_limit = self.client.get_rate_limit()
-            # Access core rate limit info
-            core = rate_limit.core  # type: ignore
+            # Access core rate limit info using resources attribute
+            core = rate_limit.resources.core  # type: ignore
             
             return RateLimitInfo(
                 limit=core.limit,
@@ -537,10 +539,14 @@ class GitHubAdapter(BaseAdapter):
             )
             
         except GithubException as e:
+            message = e.data.get('message', str(e)) if hasattr(e, 'data') else str(e)
             raise APIError(
-                f"Failed to get rate limit: {e.data.get('message', str(e))}",
+                f"Failed to get rate limit: {message}",
                 status_code=e.status
             )
+        except AttributeError as e:
+            logger.error(f"Error accessing rate limit data: {e}")
+            raise APIError(f"Failed to parse rate limit response: {str(e)}")
     
     def _convert_github_pr(
         self, 
