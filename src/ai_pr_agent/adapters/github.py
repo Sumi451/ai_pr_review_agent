@@ -466,8 +466,22 @@ class GitHubAdapter(BaseAdapter):
                 if i >= limit:
                     break
                 
-                # Convert to our model (without fetching files for efficiency)
-                pr = self._convert_github_pr(gh_pr, files=[])
+                # Create placeholder FileChange objects for display (without fetching full file details)
+                # This gives us the file count and additions/deletions for listing purposes
+                placeholder_files = []
+                if gh_pr.changed_files > 0:
+                    # Create a single placeholder to represent the file count
+                    # The actual files will be fetched when get_pull_request() is called
+                    for _ in range(gh_pr.changed_files):
+                        placeholder_files.append(FileChange(
+                            filename="",
+                            status=FileStatus.MODIFIED,
+                            additions=0,
+                            deletions=0
+                        ))
+                
+                # Convert to our model (without fetching full file details for efficiency)
+                pr = self._convert_github_pr(gh_pr, files=placeholder_files)
                 prs.append(pr)
             
             logger.info(f"Found {len(prs)} pull requests")
@@ -563,6 +577,10 @@ class GitHubAdapter(BaseAdapter):
         Returns:
             PullRequest object
         """
+        # If files list is empty or contains placeholders, use PR-level stats
+        total_additions = sum(f.additions for f in files) if files else gh_pr.additions
+        total_deletions = sum(f.deletions for f in files) if files else gh_pr.deletions
+        
         return PullRequest(
             id=gh_pr.number,
             title=gh_pr.title,
