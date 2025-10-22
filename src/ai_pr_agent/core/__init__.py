@@ -18,7 +18,7 @@ from .exceptions import (
     AnalysisError,
     AIModelError,
     NotFoundError,
-    PermissionError,
+    AccessPermissionError,
     APIError,
     RateLimitError,
 )
@@ -41,7 +41,7 @@ __all__ = [
     "AnalysisError",
     "AIModelError",
     "NotFoundError",
-    "PermissionError",
+    "AccessPermissionError",
     "APIError",
     "RateLimitError",
 ]

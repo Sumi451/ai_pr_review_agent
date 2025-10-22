@@ -1,6 +1,7 @@
 """Tests for adapter factory."""
 
 import pytest
+from unittest.mock import Mock, patch
 from ai_pr_agent.adapters.factory import AdapterFactory
 from ai_pr_agent.adapters.base import BaseAdapter, PlatformType, AdapterConfig
 from ai_pr_agent.core import (
@@ -116,9 +117,16 @@ class TestAdapterFactory:
     
     def test_create_adapter_missing_token(self):
         """Test creating adapter without token."""
-        # Should raise ValueError when no token provided and not in config
-        with pytest.raises(ValueError, match="token required"):
-            AdapterFactory.create_adapter(PlatformType.GITHUB)
+        # Mock settings to have no token
+        mock_settings = Mock()
+        mock_settings.github.token = None
+        mock_settings.github.timeout = 30
+        mock_settings.github.max_retries = 3
+        
+        with patch('ai_pr_agent.adapters.factory.get_settings', return_value=mock_settings):
+            # Should raise ValueError when no token provided and not in config
+            with pytest.raises(ValueError, match="token required"):
+                AdapterFactory.create_adapter(PlatformType.GITHUB)
     
     def test_create_adapter_with_custom_config(self):
         """Test creating adapter with custom configuration."""

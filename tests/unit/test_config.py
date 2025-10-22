@@ -44,13 +44,35 @@ class TestSettings:
             config_path = f.name
         
         try:
-            settings = Settings.load_from_file(config_path)
+            # Mock load_dotenv to prevent loading .env file
+            # and mock environment variables to not override YAML config
+            import os
+            from unittest.mock import patch
             
-            assert settings.app.debug is True
-            assert settings.app.log_level == "DEBUG"
-            assert settings.github.timeout == 60
-            assert settings.analysis.ai_feedback.model == "llama2"
-            assert settings.analysis.ai_feedback.max_tokens == 500
+            # Save original env vars
+            original_debug = os.environ.get('DEBUG')
+            original_log_level = os.environ.get('LOG_LEVEL')
+            
+            # Remove env vars that would override YAML config
+            os.environ.pop('DEBUG', None)
+            os.environ.pop('LOG_LEVEL', None)
+            
+            try:
+                # Mock load_dotenv to do nothing
+                with patch('ai_pr_agent.config.settings.load_dotenv'):
+                    settings = Settings.load_from_file(config_path)
+                
+                assert settings.app.debug is True
+                assert settings.app.log_level == "DEBUG"
+                assert settings.github.timeout == 60
+                assert settings.analysis.ai_feedback.model == "llama2"
+                assert settings.analysis.ai_feedback.max_tokens == 500
+            finally:
+                # Restore original env vars
+                if original_debug is not None:
+                    os.environ['DEBUG'] = original_debug
+                if original_log_level is not None:
+                    os.environ['LOG_LEVEL'] = original_log_level
         finally:
             os.unlink(config_path)
     

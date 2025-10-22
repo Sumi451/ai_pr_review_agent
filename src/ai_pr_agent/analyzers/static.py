@@ -62,7 +62,10 @@ class StaticAnalyzer(BaseAnalyzer):
         """
         
         if not self.can_analyze(file_change):
-            logger.debug("Skipping non-Python file: %s", file_change.filename)
+            logger.info(
+                f"Skipping {file_change.filename} - StaticAnalyzer only supports Python files "
+                f"(detected language: {file_change.language})"
+            )
             return None
         
         if not self.config.enabled:
