@@ -190,6 +190,9 @@ class TestGitHubAdapterPROperations:
         mock_pr.merged = False
         mock_pr.merged_at = None
         mock_pr.mergeable = True
+        mock_pr.changed_files = 3  # Add this for the file count
+        mock_pr.additions = 50  # Add this for additions count
+        mock_pr.deletions = 20  # Add this for deletions count
         
         # Mock user
         mock_pr.user = Mock()
