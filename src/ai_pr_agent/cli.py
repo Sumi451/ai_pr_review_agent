@@ -862,19 +862,25 @@ def analyze_pr(repository, pr_number, output, no_static, token):
 @github.command()
 @click.argument('repository')
 @click.argument('pr_number', type=int)
-@click.option('--post', is_flag=True, help='Actually post review to GitHub')
-@click.option('--dry-run', is_flag=True, help='Show what would be posted without posting')
+@click.option('--post', is_flag=True, help='Post review to GitHub')
+@click.option('--dry-run', is_flag=True, help='Preview without posting')
+@click.option('--event', type=click.Choice(['COMMENT', 'APPROVE', 'REQUEST_CHANGES']), 
+              default='COMMENT', help='Review event type')
+@click.option('--max-comments', type=int, help='Maximum inline comments')
 @click.option('--no-static', is_flag=True, help='Disable static analysis')
 @click.option('--token', envvar='GITHUB_TOKEN', help='GitHub token')
-def review_pr(repository, pr_number, post, dry_run, no_static, token):
-    """Analyze and optionally post review to GitHub PR.
+def review(repository, pr_number, post, dry_run, event, max_comments, no_static, token):
+    """
+    Analyze and review a GitHub pull request.
     
     Examples:
-        ai-pr-review github review-pr owner/repo 123 --dry-run
-        ai-pr-review github review-pr owner/repo 123 --post
+        ai-pr-review github review owner/repo 123 --dry-run
+        ai-pr-review github review owner/repo 123 --post
+        ai-pr-review github review owner/repo 123 --post --event APPROVE
     """
     if not token:
         rprint("[red]❌ GitHub token not found[/red]")
+        rprint("[yellow]Set GITHUB_TOKEN environment variable or use --token option[/yellow]")
         sys.exit(1)
     
     try:
@@ -885,165 +891,95 @@ def review_pr(repository, pr_number, post, dry_run, no_static, token):
         rprint(f"[yellow]Fetching PR #{pr_number} from {repository}...[/yellow]")
         pr = adapter.get_pull_request(repository, pr_number)
         
-        rprint(f"[green]✓ PR fetched: {pr.title}[/green]\n")
+        rprint(f"[green]✓ PR fetched: {pr.title}[/green]")
         
-        # Run analysis
+        # Set up analysis engine
         engine = AnalysisEngine()
+        
         if not no_static:
-            from ai_pr_agent.analyzers import StaticAnalyzer
             engine.register_analyzer(StaticAnalyzer())
         
-        rprint("[bold]🔍 Running analysis...[/bold]\n")
+        rprint("[bold]🔍 Analyzing...[/bold]\n")
         summary = engine.analyze_pull_request(pr)
         
         # Display results
         _display_text_results(summary)
         
         if summary.total_comments == 0:
-            rprint("\n[green]✨ No issues found! PR looks good.[/green]")
+            rprint("\n[green]✨ No issues found![/green]")
             return
         
-        # Prepare comments for posting
-        all_comments = summary.get_all_comments()
+        # Create reporter
+        from ai_pr_agent.reporters import GitHubReporter
+        reporter = GitHubReporter(adapter)
         
         if dry_run:
-            rprint(f"\n[cyan]📝 Dry run - Would post {len(all_comments)} comment(s):[/cyan]")
-            for comment in all_comments[:5]:
-                rprint(f"  • [{comment.path}:{comment.line}] {comment.body[:50]}...")
-            if len(all_comments) > 5:
-                rprint(f"  ... and {len(all_comments) - 5} more")
+            # Show what would be posted
+            rprint("\n[cyan]📝 Review Preview (Dry Run)[/cyan]\n")
+            
+            from ai_pr_agent.reporters import MarkdownFormatter
+            formatter = MarkdownFormatter()
+            
+            review_body = formatter.format_review_summary(summary)
+            rprint(Panel(review_body, title="Review Body", border_style="cyan"))
+            
+            all_comments = summary.get_all_comments()
+            inline_comments = [c for c in all_comments if c.is_inline]
+            
+            rprint(f"\n[cyan]Would post {len(inline_comments)} inline comments[/cyan]")
+            
+            for comment in inline_comments[:5]:
+                rprint(f"  • [{comment.path}:{comment.line}] {comment.body[:60]}...")
+            
+            if len(inline_comments) > 5:
+                rprint(f"  ... and {len(inline_comments) - 5} more")
+            
             return
         
         if post:
-            if not Confirm.ask(f"\n[yellow]Post {len(all_comments)} comment(s) to GitHub?[/yellow]"):
+            # Confirm before posting
+            if not Confirm.ask(
+                f"\n[yellow]Post review with {summary.total_comments} comments?[/yellow]"
+            ):
                 rprint("[yellow]Cancelled[/yellow]")
                 return
             
-            rprint("\n[yellow]Posting review to GitHub...[/yellow]")
-            
-            # Post as a review
-            review_body = f"""## 🤖 AI Code Review
-
-**Summary:**
-- Files analyzed: {len(summary.analysis_results)}
-- Total comments: {summary.total_comments}
-- Errors: {summary.total_errors}
-- Warnings: {summary.total_warnings}
-
-This is an automated review. Please verify all suggestions.
-"""
+            rprint("\n[yellow]Posting review...[/yellow]")
             
             try:
-                review_id = adapter.post_review(
+                review_id = reporter.post_review(
                     repository,
                     pr_number,
-                    all_comments,
-                    review_body,
-                    event="COMMENT"
+                    summary,
+                    event=event,
+                    max_comments=max_comments
                 )
                 
-                rprint(f"[green]✓ Review posted successfully! (ID: {review_id})[/green]")
-                rprint(f"[cyan]View at: {pr.html_url}[/cyan]")
+                rprint(f"[green]✓ Review posted! (ID: {review_id})[/green]")
+                rprint(f"[cyan]View: {pr.html_url}[/cyan]")
                 
             except Exception as e:
-                rprint(f"[red]❌ Failed to post review: {e}[/red]")
+                rprint(f"[red]❌ Failed to post: {e}[/red]")
                 sys.exit(1)
+        else:
+            rprint("\n[yellow]💡 Tip: Use --post to post review or --dry-run to preview[/yellow]")
         
     except Exception as e:
         rprint(f"[red]❌ Error: {e}[/red]")
-        logger.exception("Failed to review PR")
+        logger.exception("Review command failed")
         sys.exit(1)
 
 
 @github.command()
 @click.argument('repository')
-@click.option('--state', type=click.Choice(['open', 'closed', 'all']), default='open')
-@click.option('--limit', type=int, default=10, help='Maximum number of PRs to list')
+@click.argument('pr_number', type=int)
 @click.option('--token', envvar='GITHUB_TOKEN', help='GitHub token')
-def list_prs(repository, state, limit, token):
-    """List pull requests in a GitHub repository.
-    
-    Examples:
-        ai-pr-review github list-prs owner/repo
-        ai-pr-review github list-prs owner/repo --state closed --limit 20
+def post_summary(repository, pr_number, token):
     """
-    if not token:
-        rprint("[red]❌ GitHub token not found[/red]")
-        sys.exit(1)
-    
-    try:
-        adapter = AdapterFactory.create_github_adapter(token=token)
-        
-        rprint(f"[yellow]Fetching {state} PRs from {repository}...[/yellow]\n")
-        
-        prs = adapter.list_pull_requests(repository, state=state, limit=limit)
-        
-        if not prs:
-            rprint(f"[yellow]No {state} pull requests found[/yellow]")
-            return
-        
-        rprint(f"[bold cyan]Found {len(prs)} pull request(s):[/bold cyan]\n")
-        
-        for pr in prs:
-            state_icon = "🟢" if pr.state == "open" else "🔴"
-            rprint(f"{state_icon} [bold]#{pr.id}[/bold]: {pr.title}")
-            rprint(f"   By: {pr.author} | Branch: {pr.source_branch} → {pr.target_branch}")
-            rprint(f"   Files: {len(pr.files_changed)} | +{pr.total_additions}/-{pr.total_deletions}")
-            rprint(f"   URL: {pr.html_url}")
-            rprint()
-        
-    except Exception as e:
-        rprint(f"[red]❌ Error: {e}[/red]")
-        sys.exit(1)
-
-
-@github.command()
-@click.option('--token', envvar='GITHUB_TOKEN', help='GitHub token')
-def test_connection(token):
-    """Test GitHub API connection and show user info."""
-    if not token:
-        rprint("[red]❌ GitHub token not found[/red]")
-        rprint("\n[cyan]To set up your token:[/cyan]")
-        rprint("1. Go to https://github.com/settings/tokens")
-        rprint("2. Generate a new token with 'repo' scope")
-        rprint("3. Set it: export GITHUB_TOKEN=your_token")
-        sys.exit(1)
-    
-    try:
-        rprint("[yellow]Testing GitHub connection...[/yellow]\n")
-        
-        adapter = AdapterFactory.create_github_adapter(token=token)
-        
-        if adapter.validate_connection():
-            rprint("[green]✓ Connected to GitHub successfully![/green]\n")
-            
-            # Get rate limit info
-            rate_info = adapter.get_rate_limit()
-            rprint("[bold cyan]Rate Limit Info:[/bold cyan]")
-            rprint(f"  Limit: {rate_info.limit}")
-            rprint(f"  Remaining: {rate_info.remaining}")
-            rprint(f"  Resets at: {datetime.fromtimestamp(rate_info.reset_at)}")
-            
-            # Calculate percentage
-            usage_pct = ((rate_info.limit - rate_info.remaining) / rate_info.limit) * 100
-            if usage_pct > 80:
-                rprint(f"  [red]⚠️  Usage: {usage_pct:.1f}% (high)[/red]")
-            else:
-                rprint(f"  [green]Usage: {usage_pct:.1f}%[/green]")
-        
-    except Exception as e:
-        rprint(f"[red]❌ Connection failed: {e}[/red]")
-        sys.exit(1)
-
-
-@github.command()
-@click.argument('repository')
-@click.option('--token', envvar='GITHUB_TOKEN', help='GitHub token')
-def repo_info(repository, token):
-    """Get information about a GitHub repository.
+    Post a summary comment to a PR.
     
     Example:
-        ai-pr-review github repo-info microsoft/vscode
+        ai-pr-review github post-summary owner/repo 123
     """
     if not token:
         rprint("[red]❌ GitHub token not found[/red]")
@@ -1052,25 +988,35 @@ def repo_info(repository, token):
     try:
         adapter = AdapterFactory.create_github_adapter(token=token)
         
-        rprint(f"[yellow]Fetching repository info...[/yellow]\n")
+        rprint(f"[yellow]Fetching PR #{pr_number}...[/yellow]")
+        pr = adapter.get_pull_request(repository, pr_number)
         
-        repo_info = adapter.get_repository_info(repository)
+        # Run analysis
+        from ai_pr_agent.core.engine import AnalysisEngine
+        from ai_pr_agent.analyzers import StaticAnalyzer
+        from ai_pr_agent.reporters import GitHubReporter
         
-        info_text = f"""[bold]Repository Information[/bold]
-
-[cyan]Name:[/cyan] {repo_info.full_name}
-[cyan]Owner:[/cyan] {repo_info.owner}
-[cyan]Default Branch:[/cyan] {repo_info.default_branch}
-[cyan]Private:[/cyan] {repo_info.is_private}
-[cyan]URL:[/cyan] {repo_info.url}
-"""
+        engine = AnalysisEngine()
+        engine.register_analyzer(StaticAnalyzer())
         
-        rprint(Panel(info_text, border_style="blue", title="📦 Repository"))
+        rprint("[yellow]Analyzing...[/yellow]")
+        summary = engine.analyze_pull_request(pr)
+        
+        # Post summary
+        reporter = GitHubReporter(adapter)
+        
+        rprint("[yellow]Posting summary...[/yellow]")
+        comment_id = reporter.post_summary_comment(
+            repository,
+            pr_number,
+            summary
+        )
+        
+        rprint(f"[green]✓ Summary posted! (ID: {comment_id})[/green]")
         
     except Exception as e:
         rprint(f"[red]❌ Error: {e}[/red]")
         sys.exit(1)
-
 
 if __name__ == "__main__":
     main()
