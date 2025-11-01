@@ -1,9 +1,10 @@
 """
 GitHub adapter for fetching and posting pull request reviews.
 """
-from typing import List, Optional
+from typing import List, Optional, Dict
 from datetime import datetime
 import time
+import re
 
 from github import Github, GithubException, RateLimitExceededException
 from github.Repository import Repository as GHRepository
@@ -305,22 +306,79 @@ class GitHubAdapter(BaseAdapter):
             repo = self.client.get_repo(repository)
             gh_pr = repo.get_pull(pr_number)
             
-            # Prepare review comments
+            # Get the latest commit SHA from the PR head
+            commit_sha = gh_pr.head.sha
+            logger.debug(f"Using commit SHA: {commit_sha}")
+            
+            # Get changed lines from PR files to filter valid comment positions
+            valid_lines_by_file = self._get_valid_comment_lines(gh_pr)
+            logger.info(f"Valid lines by file: {[(f, len(lines)) for f, lines in valid_lines_by_file.items()]}")
+            
+            # Prepare review comments with proper formatting for GitHub API
             review_comments = []
+            skipped_comments = []
+            
             for comment in comments:
                 if comment.line and comment.path:
-                    review_comments.append({
-                        'path': comment.path,
-                        'line': comment.line,
-                        'body': self.format_comment_body(comment)
-                    })
+                    logger.debug(f"Checking comment: {comment.path}:{comment.line}")
+                    # Check if this line is in the changed lines for this file
+                    if comment.path in valid_lines_by_file and comment.line in valid_lines_by_file[comment.path]:
+                        # Use position instead of line + side
+                        position = valid_lines_by_file[comment.path][comment.line]
+                        review_comments.append({
+                            'path': comment.path,
+                            'position': position,
+                            'body': self.format_comment_body(comment)
+                        })
+                        logger.debug(f"Added comment on {comment.path}:{comment.line} (position {position})")
+                    else:
+                        skipped_comments.append(comment)
+                        logger.info(f"Skipped comment on {comment.path}:{comment.line} - line not in diff (valid: {comment.path in valid_lines_by_file})")
             
-            # Create review
-            review = gh_pr.create_review(
-                body=summary,
-                event=event,
-                comments=review_comments if review_comments else None
-            )
+            if skipped_comments:
+                logger.warning(f"Skipped {len(skipped_comments)} comments on lines not in the PR diff")
+                skipped_info = f"\n\n**Note:** {len(skipped_comments)} issues found on lines not changed in this PR:\n"
+                for sc in skipped_comments[:5]:
+                    skipped_info += f"- `{sc.path}:{sc.line}` - {sc.body[:60]}...\n"
+                if len(skipped_comments) > 5:
+                    skipped_info += f"- ... and {len(skipped_comments) - 5} more\n"
+                summary = summary + skipped_info
+            
+            logger.debug(f"Prepared {len(review_comments)} review comments ({len(skipped_comments)} skipped)")
+            
+            # Log what we're about to send for debugging
+            if review_comments:
+                logger.info(f"Posting {len(review_comments)} comments:")
+                for rc in review_comments[:3]:
+                    logger.info(f"  - {rc['path']}@position {rc['position']}")
+            
+            # Create review - try without inline comments first to isolate the issue
+            if not review_comments:
+                # No inline comments, just post summary
+                review = gh_pr.create_review(
+                    body=summary,
+                    event=event,
+                    commit=gh_pr.get_commits().reversed[0]
+                )
+            else:
+                # Post review with inline comments
+                # GitHub API may reject if positions are invalid
+                try:
+                    review = gh_pr.create_review(
+                        body=summary,
+                        event=event,
+                        commit=gh_pr.get_commits().reversed[0],
+                        comments=review_comments
+                    )
+                except GithubException as create_error:
+                    logger.error(f"Failed to create review with comments: {create_error.data if hasattr(create_error, 'data') else str(create_error)}")
+                    # Fallback: post summary only and inline comments separately
+                    logger.warning("Falling back to posting summary without inline comments")
+                    review = gh_pr.create_review(
+                        body=summary + "\n\n*(Inline comments could not be posted)*",
+                        event=event,
+                        commit=gh_pr.get_commits().reversed[0]
+                    )
             
             logger.info(f"Review posted successfully: {review.id}")
             return str(review.id)
@@ -561,6 +619,64 @@ class GitHubAdapter(BaseAdapter):
         except AttributeError as e:
             logger.error(f"Error accessing rate limit data: {e}")
             raise APIError(f"Failed to parse rate limit response: {str(e)}")
+    
+    def _get_valid_comment_lines(self, gh_pr) -> Dict[str, Dict[int, int]]:
+        """
+        Get valid line numbers and their positions in the diff for comments.
+        
+        Args:
+            gh_pr: GitHub PullRequest object
+        
+        Returns:
+            Dictionary mapping file paths to dict of {line_number: position_in_diff}
+        """
+        valid_lines = {}
+        
+        try:
+            for gh_file in gh_pr.get_files():
+                logger.debug(f"Processing file: {gh_file.filename}, has patch: {gh_file.patch is not None}")
+                
+                if not gh_file.patch:
+                    logger.debug(f"No patch for {gh_file.filename}, skipping")
+                    continue
+                
+                # Map line numbers to positions in the diff
+                line_to_position = {}
+                position = 0  # Position counter in the diff
+                current_line = 0  # Current line number in the new file
+                
+                for line in gh_file.patch.split('\n'):
+                    if line.startswith('@@'):
+                        match = re.search(r'\+(\d+)', line)
+                        if match:
+                            current_line = int(match.group(1))
+                            logger.debug(f"Hunk starts at line {current_line}")
+                        continue
+                    
+                    # Increment position for all diff lines (context, additions, deletions)
+                    position += 1
+                    
+                    if line.startswith('+') and not line.startswith('+++'):
+                        # Added line - map line number to position
+                        line_to_position[current_line] = position
+                        current_line += 1
+                    elif line.startswith('-'):
+                        # Deleted line - don't increment current_line
+                        pass
+                    elif not line.startswith('---'):
+                        # Context line - map line number to position
+                        line_to_position[current_line] = position
+                        current_line += 1
+                
+                if line_to_position:
+                    valid_lines[gh_file.filename] = line_to_position
+                    logger.info(f"Valid positions for {gh_file.filename}: {len(line_to_position)} lines mapped")
+        
+        except Exception as e:
+            logger.error(f"Failed to extract valid comment lines: {e}", exc_info=True)
+        
+        logger.info(f"Total files with valid lines: {len(valid_lines)}")
+        return valid_lines
     
     def _convert_github_pr(
         self, 

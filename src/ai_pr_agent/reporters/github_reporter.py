@@ -67,6 +67,19 @@ class GitHubReporter:
         if event == "COMMENT":
             event = self._determine_review_event(summary)
         
+        # Check if we're reviewing our own PR
+        # GitHub doesn't allow REQUEST_CHANGES or APPROVE on your own PRs
+        pr = self.adapter.get_pull_request(repository, pr_number)
+        current_user = self.adapter.client.get_user().login
+        
+        if pr.author == current_user:
+            if event in ("REQUEST_CHANGES", "APPROVE"):
+                logger.warning(
+                    f"Cannot use event '{event}' on own PR. "
+                    f"Falling back to COMMENT."
+                )
+                event = "COMMENT"
+        
         # Post review
         try:
             review_id = self.adapter.post_review(

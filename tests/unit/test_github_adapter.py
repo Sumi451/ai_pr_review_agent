@@ -282,6 +282,41 @@ class TestGitHubAdapterComments:
         mock_review = Mock()
         mock_review.id = 999
         
+        # Mock commits for the PR
+        mock_commit = Mock()
+        mock_commits = Mock()
+        mock_commits.reversed = [mock_commit]
+        mock_pr.get_commits.return_value = mock_commits
+        
+        # Mock files with patches for diff parsing
+        mock_file = Mock()
+        mock_file.filename = "test.py"
+        mock_file.patch = """@@ -1,5 +1,25 @@
++def new_function():
++    pass
++
+ def existing():
+-    old_line
++    new_line
++    line10
++    line11
++    line12
++    line13
++    line14
++    line15
++    line16
++    line17
++    line18
++    line19
++    line20
++    line21
++    line22
++    line23
++    line24
++    line25
+"""
+        mock_pr.get_files.return_value = [mock_file]
+        
         mock_client.get_repo.return_value = mock_repo
         mock_repo.get_pull.return_value = mock_pr
         mock_pr.create_review.return_value = mock_review

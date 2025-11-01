@@ -785,6 +785,64 @@ def github():
 
 
 @github.command()
+@click.option('--token', envvar='GITHUB_TOKEN', help='GitHub token (or set GITHUB_TOKEN env var)')
+def rate_limit(token):
+    """Check GitHub API rate limit status.
+    
+    Examples:
+        ai-pr-review github rate-limit
+    """
+    if not token:
+        rprint("[red]❌ GitHub token not found[/red]")
+        rprint("[yellow]Set GITHUB_TOKEN environment variable or use --token option[/yellow]")
+        sys.exit(1)
+    
+    try:
+        # Create adapter
+        adapter = AdapterFactory.create_github_adapter(token=token)
+        
+        # Get rate limit info
+        rate_info = adapter.get_rate_limit()
+        
+        # Calculate percentage
+        core_percent = (rate_info.remaining / rate_info.limit * 100) if rate_info.limit > 0 else 0
+        
+        # Determine color based on remaining
+        if rate_info.remaining > rate_info.limit * 0.5:
+            color = "green"
+            status = "✓ Good"
+        elif rate_info.remaining > rate_info.limit * 0.2:
+            color = "yellow"
+            status = "⚠ Moderate"
+        else:
+            color = "red"
+            status = "⚠ Low"
+        
+        # Format reset time
+        from datetime import datetime
+        reset_time = datetime.fromtimestamp(rate_info.reset_at)
+        time_until_reset = reset_time - datetime.now()
+        minutes_until_reset = int(time_until_reset.total_seconds() / 60)
+        
+        info_text = f"""[bold]GitHub API Rate Limit[/bold]
+
+[cyan]Status:[/cyan] [{color}]{status}[/{color}]
+[cyan]Remaining:[/cyan] [{color}]{rate_info.remaining:,}[/{color}] / {rate_info.limit:,} ({core_percent:.1f}%)
+[cyan]Used:[/cyan] {rate_info.limit - rate_info.remaining:,}
+[cyan]Resets:[/cyan] {reset_time.strftime('%Y-%m-%d %H:%M:%S')} (in {minutes_until_reset} minutes)
+"""
+        
+        rprint(Panel(info_text, border_style=color, title="📊 Rate Limit Status"))
+        
+        if rate_info.remaining < 100:
+            rprint("\n[yellow]⚠ Warning: Low on API requests! Consider waiting for reset.[/yellow]")
+        
+    except Exception as e:
+        rprint(f"[red]❌ Error: {e}[/red]")
+        sys.exit(1)
+
+
+@github.command()
 @click.argument('repository')
 @click.argument('pr_number', type=int)
 @click.option('--output', '-o', type=click.Choice(['text', 'json', 'markdown']), default='text')

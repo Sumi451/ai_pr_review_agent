@@ -34,6 +34,19 @@ Test your GitHub token and see rate limit info:
 ai-pr-review github test-connection
 ```
 
+### Check Rate Limit
+
+Check your GitHub API rate limit status:
+```bash
+ai-pr-review github rate-limit
+```
+
+This shows:
+- Current remaining requests
+- Total limit
+- Usage percentage
+- Reset time
+
 ### Repository Info
 
 Get information about a repository:
